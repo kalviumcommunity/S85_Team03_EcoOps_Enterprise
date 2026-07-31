@@ -6,12 +6,10 @@ profiles each dataset, prints a summary to the terminal,
 and generates a Markdown profiling report.
 """
 
-from pathlib import Path
+from src.config.paths import PROFILING_REPORT, RAW_DATA_DIR
 
 import pandas as pd
 
-DATA_DIRECTORY = Path("data/raw")
-REPORT_PATH = Path("docs/profiling-report.md")
 
 
 def load_datasets() -> dict[str, pd.DataFrame]:
@@ -26,11 +24,11 @@ def load_datasets() -> dict[str, pd.DataFrame]:
 
     datasets: dict[str, pd.DataFrame] = {}
 
-    csv_files = sorted(DATA_DIRECTORY.glob("*.csv"))
+    csv_files = sorted(RAW_DATA_DIR.glob("*.csv"))
 
     if not csv_files:
         raise FileNotFoundError(
-            f"No CSV files found in '{DATA_DIRECTORY}'."
+            f"No CSV files found in '{RAW_DATA_DIR}'."
         )
 
     for csv_file in csv_files:
@@ -100,9 +98,9 @@ def save_markdown_report(
         datasets: Dictionary containing all loaded datasets.
     """
 
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROFILING_REPORT.parent.mkdir(parents=True, exist_ok=True)
 
-    with REPORT_PATH.open("w", encoding="utf-8") as report:
+    with PROFILING_REPORT.open("w", encoding="utf-8") as report:
 
         report.write("# Data Profiling Report\n\n")
         report.write(
@@ -143,7 +141,7 @@ def save_markdown_report(
             report.write("\n---\n\n")
 
     print("\n" + "=" * 60)
-    print(f"Profiling report saved to: {REPORT_PATH}")
+    print(f"Profiling report saved to: {PROFILING_REPORT}")
     print("=" * 60)
 
 
