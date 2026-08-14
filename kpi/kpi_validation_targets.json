@@ -1,0 +1,22 @@
+{
+    "monthly_active_users": {
+        "min": 5000,
+        "max": 6000
+    },
+    "revenue_per_customer": {
+        "min": 90,
+        "max": 110
+    },
+    "churn_rate": {
+        "min": 0,
+        "max": 0.05
+    },
+    "total_revenue": {
+        "min": 100000,
+        "max": 500000
+    },
+    "average_transaction_value": {
+        "min": 50,
+        "max": 200
+    }
+}
