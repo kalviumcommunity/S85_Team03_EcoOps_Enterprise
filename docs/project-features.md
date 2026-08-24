@@ -92,6 +92,16 @@ Data Explorer calculates descriptive statistics for numeric columns, including c
 
 The Quick Exploration control lets the user choose a numeric column and view the most frequent values in a bar chart. This demonstrates that uploaded data can feed downstream visual analysis without manual preprocessing.
 
+### Operational Analytics Additions
+
+Data Explorer also includes several workflow improvements:
+
+- Chart aggregation can be switched between sum, average, and count.
+- A data-quality audit reports data types, unique values, missing values, and completeness for every column.
+- Integrity checks identify duplicate rows, fully complete rows, and constant columns.
+- The current filtered result can be downloaded as CSV or JSON.
+- Reset Filters also restores the chart aggregation default.
+
 ## Data and Processing Components
 
 The repository separates raw data, processing logic, analytics, and validation:
