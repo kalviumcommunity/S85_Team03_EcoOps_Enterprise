@@ -1,5 +1,27 @@
+from io import BytesIO
+
+import plotly.express as px
 import streamlit as st
 import pandas as pd
+
+from src.analytics.dashboard_metrics import (
+    aggregate_values,
+    build_quality_summary,
+    calculate_kpis,
+    find_column,
+)
+
+
+@st.cache_data
+def load_data(file_bytes, file_name):
+    """Load an uploaded dataset once per file and reuse it across reruns."""
+    file_stream = BytesIO(file_bytes)
+    if file_name.lower().endswith(".csv"):
+        return pd.read_csv(file_stream)
+    if file_name.lower().endswith(".json"):
+        return pd.read_json(file_stream)
+    raise ValueError("Unsupported file type.")
+
 
 st.set_page_config(page_title="Analytics Dashboard", page_icon="📊", layout="wide")
 
@@ -83,14 +105,8 @@ elif page == "Data Explorer":
         st.info("Upload a CSV or JSON file to begin.")
     else:
         try:
-            if uploaded_file.name.lower().endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            elif uploaded_file.name.lower().endswith(".json"):
-                df = pd.read_json(uploaded_file)
-            else:
-                st.error("Unsupported file type.")
-                st.stop()
-        except (ValueError, TypeError, pd.errors.ParserError, OSError):
+            df = load_data(uploaded_file.getvalue(), uploaded_file.name)
+        except Exception:
             st.error("Could not read this file. Check the format and try again.")
             st.stop()
 
@@ -104,20 +120,9 @@ elif page == "Data Explorer":
             f"{len(df.columns):,} columns)"
         )
 
-        date_columns = [
-            column
-            for column in df.columns
-            if column.lower() in {"date", "datetime", "timestamp"}
-        ]
-        segment_columns = [
-            column for column in df.columns if column.lower() == "segment"
-        ]
-        revenue_columns = [
-            column for column in df.columns if column.lower() == "revenue"
-        ]
-        date_column = date_columns[0] if date_columns else None
-        segment_column = segment_columns[0] if segment_columns else None
-        revenue_column = revenue_columns[0] if revenue_columns else None
+        date_column = find_column(df, ("date", "datetime", "timestamp"))
+        segment_column = find_column(df, ("segment",))
+        revenue_column = find_column(df, ("revenue",))
 
         st.sidebar.header("Filters")
         if st.sidebar.button("Reset Filters", key="reset_filters"):
@@ -125,9 +130,17 @@ elif page == "Data Explorer":
                 "filter_date_range",
                 "filter_segments",
                 "filter_revenue_range",
+                "chart_aggregation",
             ]:
                 st.session_state.pop(filter_key, None)
             st.rerun()
+
+        aggregation = st.sidebar.selectbox(
+            "Chart aggregation",
+            options=["Sum", "Average", "Count"],
+            key="chart_aggregation",
+            help="Choose how numeric values are summarized in the charts.",
+        )
 
         filtered_df = df.copy()
         if date_column:
@@ -198,6 +211,83 @@ elif page == "Data Explorer":
             )
             st.stop()
 
+        numeric_cols = filtered_df.select_dtypes(include="number").columns.tolist()
+        metric_value_column = revenue_column or (
+            numeric_cols[0] if numeric_cols else None
+        )
+        kpis = calculate_kpis(filtered_df, metric_value_column)
+        total_revenue = kpis["total_value"]
+        average_value = kpis["average_value"]
+        unique_customers = kpis["customers"]
+        null_pct = 100 - kpis["quality"]
+
+        st.header("Key Performance Indicators")
+        kpi_revenue, kpi_average, kpi_records, kpi_customers, kpi_quality = (
+            st.columns(5)
+        )
+        with kpi_revenue:
+            st.metric(
+                "Revenue",
+                f"${total_revenue:,.0f}" if total_revenue is not None else "N/A",
+            )
+        with kpi_average:
+            st.metric(
+                "Avg Value",
+                f"${average_value:,.0f}" if average_value is not None else "N/A",
+            )
+        with kpi_records:
+            st.metric("Records", f"{len(filtered_df):,}")
+        with kpi_customers:
+            st.metric("Customers", f"{unique_customers:,}")
+        with kpi_quality:
+            st.metric("Quality", f"{100 - null_pct:.1f}%")
+
+        st.header("Filtered Analytics")
+        chart_col, segment_col = st.columns(2)
+        with chart_col:
+            st.subheader("Revenue Over Time")
+            if date_column and metric_value_column:
+                chart_dates = pd.to_datetime(
+                    filtered_df[date_column], errors="coerce"
+                )
+                trend_source = pd.DataFrame(
+                    {"date": chart_dates, "value": filtered_df[metric_value_column]}
+                ).dropna()
+                trend_group = trend_source.groupby("date")["value"]
+                if aggregation == "Average":
+                    trend = trend_group.mean()
+                elif aggregation == "Count":
+                    trend = trend_group.count()
+                else:
+                    trend = trend_group.sum()
+                st.line_chart(trend)
+            else:
+                st.info("A date and numeric column are required for this chart.")
+        with segment_col:
+            st.subheader("Revenue by Segment")
+            if segment_column and metric_value_column:
+                segment_values = aggregate_values(
+                    filtered_df,
+                    segment_column,
+                    metric_value_column,
+                    aggregation,
+                )
+                st.bar_chart(segment_values)
+            else:
+                st.info("Segment and numeric columns are required for this chart.")
+
+        st.subheader("Value Distribution")
+        if metric_value_column:
+            distribution = px.histogram(
+                filtered_df,
+                x=metric_value_column,
+                nbins=30,
+                title=f"Distribution of {metric_value_column}",
+            )
+            st.plotly_chart(distribution, use_container_width=True)
+        else:
+            st.info("A numeric column is required for the distribution chart.")
+
         st.header("Dataset Preview")
         row_count, column_count, null_count = st.columns(3)
         with row_count:
@@ -227,7 +317,6 @@ elif page == "Data Explorer":
         st.dataframe(summary, use_container_width=True)
 
         st.subheader("Descriptive Statistics")
-        numeric_cols = filtered_df.select_dtypes(include="number").columns.tolist()
         if numeric_cols:
             st.dataframe(
                 filtered_df[numeric_cols].describe(), use_container_width=True
@@ -244,6 +333,48 @@ elif page == "Data Explorer":
             st.bar_chart(filtered_df[selected_col].value_counts().head(20))
         else:
             st.info("Add a numeric column to enable the quick exploration chart.")
+
+        st.header("Data Quality Audit")
+        quality_col, duplicate_col = st.columns(2)
+        with quality_col:
+            st.subheader("Column Completeness")
+            quality_summary = build_quality_summary(filtered_df)
+            st.dataframe(quality_summary, use_container_width=True)
+        with duplicate_col:
+            st.subheader("Integrity Checks")
+            duplicate_rows = int(filtered_df.duplicated().sum())
+            constant_columns = [
+                column
+                for column in filtered_df.columns
+                if filtered_df[column].nunique(dropna=False) <= 1
+            ]
+            st.metric("Duplicate Rows", f"{duplicate_rows:,}")
+            st.metric("Complete Rows", f"{filtered_df.dropna().shape[0]:,}")
+            if constant_columns:
+                st.warning(
+                    "Constant columns: " + ", ".join(map(str, constant_columns))
+                )
+            else:
+                st.success("No constant columns detected.")
+
+        st.header("Export Filtered Data")
+        export_csv, export_json = st.columns(2)
+        with export_csv:
+            st.download_button(
+                "Download CSV",
+                data=filtered_df.to_csv(index=False).encode("utf-8"),
+                file_name="filtered_dataset.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with export_json:
+            st.download_button(
+                "Download JSON",
+                data=filtered_df.to_json(orient="records", date_format="iso"),
+                file_name="filtered_dataset.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
     st.divider()
 
