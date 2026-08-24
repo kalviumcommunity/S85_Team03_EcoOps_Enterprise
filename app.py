@@ -10,6 +10,8 @@ from src.analytics.dashboard_metrics import (
     calculate_kpis,
     find_column,
 )
+from src.analytics.alerts import get_breached_alerts
+from src.config.alerts import ALERT_THRESHOLDS
 
 
 @st.cache_data
@@ -220,6 +222,40 @@ elif page == "Data Explorer":
         average_value = kpis["average_value"]
         unique_customers = kpis["customers"]
         null_pct = 100 - kpis["quality"]
+
+        churn_column = find_column(
+            filtered_df, ("churn_rate", "churn", "churn percentage")
+        )
+        churn_rate = None
+        if churn_column and pd.api.types.is_numeric_dtype(
+            filtered_df[churn_column]
+        ):
+            churn_rate = filtered_df[churn_column].mean()
+        current_metrics = {
+            "churn_rate": churn_rate,
+            "avg_order_value": average_value,
+            "null_percentage": null_pct,
+        }
+
+        st.header("Operational Alerts")
+        breached_alerts = get_breached_alerts(current_metrics, ALERT_THRESHOLDS)
+        for alert in breached_alerts:
+            config = alert["config"]
+            alert_text = (
+                f"ALERT: {config['metric']} is {alert['value']:.1f} "
+                f"(threshold: {config['threshold']:.1f}). {config['message']}"
+            )
+            if config["severity"] == "critical":
+                st.error(alert_text)
+            else:
+                st.warning(alert_text)
+        if not breached_alerts:
+            st.success("All monitored metrics are within configured thresholds.")
+        if churn_rate is None:
+            st.caption(
+                "Churn alerts are activated when the uploaded dataset contains "
+                "a numeric churn_rate or churn column."
+            )
 
         st.header("Key Performance Indicators")
         kpi_revenue, kpi_average, kpi_records, kpi_customers, kpi_quality = (
