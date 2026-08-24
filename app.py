@@ -104,36 +104,134 @@ elif page == "Data Explorer":
             f"{len(df.columns):,} columns)"
         )
 
+        date_columns = [
+            column
+            for column in df.columns
+            if column.lower() in {"date", "datetime", "timestamp"}
+        ]
+        segment_columns = [
+            column for column in df.columns if column.lower() == "segment"
+        ]
+        revenue_columns = [
+            column for column in df.columns if column.lower() == "revenue"
+        ]
+        date_column = date_columns[0] if date_columns else None
+        segment_column = segment_columns[0] if segment_columns else None
+        revenue_column = revenue_columns[0] if revenue_columns else None
+
+        st.sidebar.header("Filters")
+        if st.sidebar.button("Reset Filters", key="reset_filters"):
+            for filter_key in [
+                "filter_date_range",
+                "filter_segments",
+                "filter_revenue_range",
+            ]:
+                st.session_state.pop(filter_key, None)
+            st.rerun()
+
+        filtered_df = df.copy()
+        if date_column:
+            parsed_dates = pd.to_datetime(df[date_column], errors="coerce")
+            valid_dates = parsed_dates.dropna()
+            if valid_dates.empty:
+                st.sidebar.warning("No valid dates found; date filtering is disabled.")
+            else:
+                date_range = st.sidebar.date_input(
+                    "Date Range",
+                    value=(valid_dates.min().date(), valid_dates.max().date()),
+                    key="filter_date_range",
+                )
+                if isinstance(date_range, tuple) and len(date_range) == 2:
+                    start_date, end_date = date_range
+                    filtered_df = filtered_df[
+                        parsed_dates.between(
+                            pd.Timestamp(start_date),
+                            pd.Timestamp(end_date) + pd.Timedelta(days=1),
+                            inclusive="left",
+                        )
+                    ]
+        else:
+            st.sidebar.info("No date column found; date filtering is unavailable.")
+
+        if segment_column:
+            all_segments = sorted(df[segment_column].dropna().unique().tolist())
+            selected_segments = st.sidebar.multiselect(
+                "Segments",
+                options=all_segments,
+                default=all_segments,
+                key="filter_segments",
+            )
+            filtered_df = filtered_df[
+                filtered_df[segment_column].isin(selected_segments)
+            ]
+        else:
+            st.sidebar.info(
+                "No segment column found; segment filtering is unavailable."
+            )
+
+        if revenue_column and pd.api.types.is_numeric_dtype(df[revenue_column]):
+            minimum_revenue = int(df[revenue_column].min())
+            maximum_revenue = int(df[revenue_column].max())
+            if minimum_revenue < maximum_revenue:
+                revenue_range = st.sidebar.slider(
+                    "Revenue Range",
+                    min_value=minimum_revenue,
+                    max_value=maximum_revenue,
+                    value=(minimum_revenue, maximum_revenue),
+                    key="filter_revenue_range",
+                )
+                filtered_df = filtered_df[
+                    filtered_df[revenue_column].between(*revenue_range)
+                ]
+            else:
+                st.sidebar.metric("Revenue", f"{minimum_revenue:,}")
+        else:
+            st.sidebar.info(
+                "No numeric revenue column found; revenue filtering is unavailable."
+            )
+
+        st.write(f"Showing {len(filtered_df):,} of {len(df):,} records")
+        if filtered_df.empty:
+            st.warning(
+                "No data matches the current filters. "
+                "Try broadening your selection."
+            )
+            st.stop()
+
         st.header("Dataset Preview")
         row_count, column_count, null_count = st.columns(3)
         with row_count:
-            st.metric("Rows", f"{len(df):,}")
+            st.metric("Rows", f"{len(filtered_df):,}")
         with column_count:
-            st.metric("Columns", f"{len(df.columns):,}")
+            st.metric("Columns", f"{len(filtered_df.columns):,}")
         with null_count:
-            total_cells = df.shape[0] * df.shape[1]
-            null_pct = df.isnull().sum().sum() / total_cells * 100
+            total_cells = filtered_df.shape[0] * filtered_df.shape[1]
+            null_pct = filtered_df.isnull().sum().sum() / total_cells * 100
             st.metric("Null %", f"{null_pct:.1f}%")
 
         st.subheader("First 10 Rows")
-        st.dataframe(df.head(10), use_container_width=True)
+        st.dataframe(filtered_df.head(10), use_container_width=True)
 
         st.subheader("Column Summary")
         summary = pd.DataFrame(
             {
-                "Column": df.columns,
-                "Type": df.dtypes.astype(str).values,
-                "Non-Null": df.notnull().sum().values,
-                "Null Count": df.isnull().sum().values,
-                "Null %": (df.isnull().sum() / len(df) * 100).round(1).values,
+                "Column": filtered_df.columns,
+                "Type": filtered_df.dtypes.astype(str).values,
+                "Non-Null": filtered_df.notnull().sum().values,
+                "Null Count": filtered_df.isnull().sum().values,
+                "Null %": (
+                    filtered_df.isnull().sum() / len(filtered_df) * 100
+                ).round(1).values,
             }
         )
         st.dataframe(summary, use_container_width=True)
 
         st.subheader("Descriptive Statistics")
-        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        numeric_cols = filtered_df.select_dtypes(include="number").columns.tolist()
         if numeric_cols:
-            st.dataframe(df[numeric_cols].describe(), use_container_width=True)
+            st.dataframe(
+                filtered_df[numeric_cols].describe(), use_container_width=True
+            )
         else:
             st.info("No numeric columns are available for descriptive statistics.")
 
@@ -143,7 +241,7 @@ elif page == "Data Explorer":
                 "Select a column to visualise",
                 numeric_cols,
             )
-            st.bar_chart(df[selected_col].value_counts().head(20))
+            st.bar_chart(filtered_df[selected_col].value_counts().head(20))
         else:
             st.info("Add a numeric column to enable the quick exploration chart.")
 
