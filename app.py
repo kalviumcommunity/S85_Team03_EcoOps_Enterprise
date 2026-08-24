@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 st.set_page_config(page_title="Analytics Dashboard", page_icon="📊", layout="wide")
 
@@ -71,14 +72,80 @@ elif page == "Trends":
 elif page == "Data Explorer":
     st.title("Data Explorer")
 
-    st.header("Explore Marketplace Data")
-    filter_col, table_col = st.columns(2)
-    with filter_col:
-        st.subheader("Filter Controls")
-        st.write("Filter controls will be added here.")
-    with table_col:
-        st.subheader("Result Preview")
-        st.write("Data table placeholder")
+    st.header("Upload Dataset")
+    uploaded_file = st.file_uploader(
+        "Upload your dataset",
+        type=["csv", "json"],
+        help="CSV and JSON files are supported.",
+    )
+
+    if uploaded_file is None:
+        st.info("Upload a CSV or JSON file to begin.")
+    else:
+        try:
+            if uploaded_file.name.lower().endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            elif uploaded_file.name.lower().endswith(".json"):
+                df = pd.read_json(uploaded_file)
+            else:
+                st.error("Unsupported file type.")
+                st.stop()
+        except (ValueError, TypeError, pd.errors.ParserError, OSError):
+            st.error("Could not read this file. Check the format and try again.")
+            st.stop()
+
+        if df.empty:
+            st.warning("Uploaded file is empty.")
+            st.stop()
+
+        st.session_state["uploaded_data"] = df
+        st.success(
+            f"Loaded: {uploaded_file.name} ({len(df):,} rows, "
+            f"{len(df.columns):,} columns)"
+        )
+
+        st.header("Dataset Preview")
+        row_count, column_count, null_count = st.columns(3)
+        with row_count:
+            st.metric("Rows", f"{len(df):,}")
+        with column_count:
+            st.metric("Columns", f"{len(df.columns):,}")
+        with null_count:
+            total_cells = df.shape[0] * df.shape[1]
+            null_pct = df.isnull().sum().sum() / total_cells * 100
+            st.metric("Null %", f"{null_pct:.1f}%")
+
+        st.subheader("First 10 Rows")
+        st.dataframe(df.head(10), use_container_width=True)
+
+        st.subheader("Column Summary")
+        summary = pd.DataFrame(
+            {
+                "Column": df.columns,
+                "Type": df.dtypes.astype(str).values,
+                "Non-Null": df.notnull().sum().values,
+                "Null Count": df.isnull().sum().values,
+                "Null %": (df.isnull().sum() / len(df) * 100).round(1).values,
+            }
+        )
+        st.dataframe(summary, use_container_width=True)
+
+        st.subheader("Descriptive Statistics")
+        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        if numeric_cols:
+            st.dataframe(df[numeric_cols].describe(), use_container_width=True)
+        else:
+            st.info("No numeric columns are available for descriptive statistics.")
+
+        st.subheader("Quick Exploration")
+        if numeric_cols:
+            selected_col = st.selectbox(
+                "Select a column to visualise",
+                numeric_cols,
+            )
+            st.bar_chart(df[selected_col].value_counts().head(20))
+        else:
+            st.info("Add a numeric column to enable the quick exploration chart.")
 
     st.divider()
 
