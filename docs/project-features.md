@@ -163,3 +163,15 @@ streamlit run app.py
 ```
 
 Open the local URL printed by Streamlit, select **Data Explorer**, and upload a CSV or JSON file to inspect it. For the full filter experience, use columns named `date`, `segment`, and `revenue`.
+
+## Batch Data Pipeline
+
+The root `pipeline.py` provides a command-line workflow for ingestion, cleaning, aggregation, and output. It accepts any input and output paths:
+
+```powershell
+python pipeline.py --input data/raw/interactions.csv --output output
+```
+
+The pipeline logs each stage with a timestamp and writes `cleaned.csv` and `aggregated.csv`. It recognizes common aliases such as `user_id` for `customer_id`, `price` for `amount`, and `category` for `segment`. The aggregate includes revenue, order count, and unique customer count by segment.
+
+The scheduled workflow at `.github/workflows/pipeline.yml` runs every Monday at 06:00 UTC and can also be started manually with GitHub Actions. It refreshes the generated `output/` files and commits changes using the GitHub Actions bot.
