@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Seller {
+  id            String    @id @default(uuid())
+  sellerId      String    @unique
+  sellerName    String
+  region        String
+  category      String
+  status        String    @default("ACTIVE")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  products      Product[]
+  orders        Order[]
+  reviews       Review[]
+  returns       Return[]
+  performance   SellerPerformance[]
+
+  @@index([region, category])
+  @@index([status])
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  productId   String   @unique
+  seller      Seller   @relation(fields: [sellerId], references: [id])
+  sellerId    String
+  productName String
+  category    String
+  price       Float
+  status      String   @default("ACTIVE")
+  reviews     Review[]
+  orders      Order[]
+
+  @@index([sellerId])
+  @@index([category])
+}
+
+model Order {
+  id                  String   @id @default(uuid())
+  orderId             String   @unique
+  seller              Seller   @relation(fields: [sellerId], references: [id])
+  sellerId            String
+  product             Product? @relation(fields: [productId], references: [id])
+  productId           String?
+  orderDate           DateTime
+  deliveryDate        DateTime?
+  expectedDeliveryDate DateTime?
+  orderStatus         String
+  region              String
+  createdAt           DateTime @default(now())
+
+  @@index([sellerId, orderDate])
+  @@index([orderStatus])
+  @@index([region])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  seller     Seller   @relation(fields: [sellerId], references: [id])
+  sellerId   String
+  product    Product? @relation(fields: [productId], references: [id])
+  productId  String?
+  rating     Float
+  reviewText String
+  sentiment  String
+  reviewDate DateTime @default(now())
+
+  @@index([sellerId, reviewDate])
+  @@index([sentiment])
+}
+
+model Return {
+  id           String   @id @default(uuid())
+  orderId      String   @unique
+  seller       Seller   @relation(fields: [sellerId], references: [id])
+  sellerId     String
+  returnDate   DateTime
+  returnReason String
+  returnStatus String
+
+  @@index([sellerId, returnDate])
+}
+
+model SellerPerformance {
+  id                 String   @id @default(uuid())
+  seller             Seller   @relation(fields: [sellerId], references: [id])
+  sellerId           String
+  date               DateTime
+  averageRating      Float
+  returnRate         Float
+  deliveryPerformance Float
+  sentimentScore     Float
+  trustScore         Float
+
+  @@index([sellerId, date])
+}
